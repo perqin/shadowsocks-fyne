@@ -1,8 +1,10 @@
 package main
 
-import "log"
-
-var currentSubscription Subscription
+import (
+	"errors"
+	"fmt"
+	"log"
+)
 
 type Subscription struct {
 	Url      string    `json:"url"`
@@ -17,10 +19,12 @@ func AddSubscription(subscription Subscription) {
 	}
 }
 
-func SetCurrentSubscription(subscription Subscription) {
-	currentSubscription = subscription
-}
-
-func CurrentSubscription() Subscription {
-	return currentSubscription
+func UpdateSubscription(subscription Subscription) error {
+	for i, s := range config.Subscriptions {
+		if s.Url == subscription.Url {
+			config.Subscriptions[i] = subscription
+			return SaveConfig()
+		}
+	}
+	return errors.New(fmt.Sprintf("fail to update Subscription with Url:%s", subscription.Url))
 }

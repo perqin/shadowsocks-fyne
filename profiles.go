@@ -1,6 +1,10 @@
 package main
 
 type Profile struct {
-	Server string `json:"server"`
-	Remark string `json:"remark"`
+	Name       string `json:"name"`
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+	Method     string `json:"method"`
+	Password   string `json:"password"`
+	Acl        string `json:"acl"`
 }

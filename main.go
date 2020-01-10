@@ -59,45 +59,140 @@ func updateTabs() {
 	if len(config.Subscriptions) == 0 {
 		subscriptionsTabs.Hide()
 		noSubscriptionsObject.Show()
-		//window.SetContent(fyne.NewContainerWithLayout(layout.NewCenterLayout(), widget.NewLabel("No subscriptions.")))
 	} else {
 		// Clear old tabs
 		for len(subscriptionsTabs.Items) != 0 {
 			subscriptionsTabs.RemoveIndex(0)
 		}
-		for _, subscription := range config.Subscriptions {
+		for indexS, subscription := range config.Subscriptions {
 			list := make([]fyne.CanvasObject, 0)
-			for _, profile := range subscription.Profiles {
-				list = append(list, widget.NewLabel(fmt.Sprintf("%s (%s)", profile.Server, profile.Remark)))
+			for indexP, profile := range subscription.Profiles {
+				list = append(list, widget.NewLabel(fmt.Sprintf("%s (%s)", profile.Server, profile.Name)))
+				list = append(list, widget.NewHBox(
+					widget.NewLabel(fmt.Sprintf("%s (%s:%d %s)", profile.Name, profile.Server, profile.ServerPort, profile.Method)),
+					layout.NewSpacer(),
+					widget.NewButton("Select", func() {
+						selectProfile(indexS, indexP)
+					})))
 			}
-			//subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, widget.NewLabel(fmt.Sprintf("URL: %s", subscription.Url))))
 			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, fyne.NewContainerWithLayout(customWidget.NewVWeightLayout(),
 				widget.NewLabel(fmt.Sprintf("URL: %s", subscription.Url)),
-				// TODO: Add list
-				customWidget.NewWeightedItem(widget.NewScrollContainer(), 1),
+				customWidget.NewWeightedItem(widget.NewScrollContainer(widget.NewVBox(list...)), 1),
 			)))
 		}
-		//window.SetContent(subscriptionsTabs)
 		subscriptionsTabs.Show()
 		noSubscriptionsObject.Hide()
 	}
 }
 
-func newMainMenu(window fyne.Window) *fyne.MainMenu {
-	subscriptionsMenu := fyne.NewMenu("Subscriptions",
-		fyne.NewMenuItem("Add", func() {
-			// Show dialog for new subscription
-			urlEntry := widget.NewEntry()
-			form := widget.NewForm(
-				widget.NewFormItem("Url", urlEntry))
-			dialog.ShowCustomConfirm("Add subscription", "Add", "Cancel", form, func(confirmed bool) {
-				if confirmed {
-					AddSubscription(Subscription{Url: urlEntry.Text})
-				}
-			}, window)
-		}))
-	return fyne.NewMainMenu(
-		subscriptionsMenu)
+var subscriptionIndex = -1
+var profileIndex = -1
+var profile Profile
+
+func selectProfile(si, pi int) {
+	subscriptionIndex = si
+	profileIndex = pi
+	profile = config.Subscriptions[si].Profiles[pi]
+	log.Printf("Selected Subcription:%s Profile:%s\n", config.Subscriptions[si].Name, profile.Name)
+}
+
+func onAddSubscriptionAction() {
+	// Show dialog for new subscription
+	urlEntry := widget.NewEntry()
+	form := widget.NewForm(
+		widget.NewFormItem("Url", urlEntry))
+	dialog.ShowCustomConfirm("Add subscription", "Add", "Cancel", form, func(confirmed bool) {
+		if confirmed {
+			AddSubscription(Subscription{Url: urlEntry.Text})
+		}
+	}, window)
+}
+
+func onRefreshAction() {
+	// Update
+	index := subscriptionsTabs.CurrentTabIndex()
+	size := len(config.Subscriptions)
+	if index < 0 || index >= size {
+		customWidget.Toast("Index out of bound")
+		return
+	}
+	url := config.Subscriptions[index].Url
+	go func() {
+		directClient := http.Client{Transport: &http.Transport{Proxy: nil}}
+		response, err := directClient.Get(url)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		responseBody, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		content := string(responseBody)
+		//log.Println(content)
+		protocolPrefix := "ssd://"
+		if !strings.HasPrefix(content, protocolPrefix) {
+			log.Println("Unsupported protocol")
+			return
+		}
+		content = content[len(protocolPrefix):]
+		decoded, err := base64.RawStdEncoding.DecodeString(content)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		ssdData := SsdData{}
+		err = json.Unmarshal(decoded, &ssdData)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		log.Printf("Successfully updated [%s] and found %d servers\n", ssdData.Airport, len(ssdData.Servers))
+		// Now convert into config
+		newSubscription := Subscription{
+			Url:      url,
+			Name:     ssdData.Airport,
+			Profiles: nil,
+		}
+		for _, server := range ssdData.Servers {
+			var method string
+			if server.Encryption != "" {
+				method = server.Encryption
+			} else {
+				method = ssdData.Encryption
+			}
+			var password string
+			if server.Password != "" {
+				password = server.Password
+			} else {
+				password = ssdData.Password
+			}
+			newSubscription.Profiles = append(newSubscription.Profiles, Profile{
+				Name:       server.Remarks,
+				Server:     server.Server,
+				ServerPort: server.Port,
+				Method:     method,
+				Password:   password,
+			})
+		}
+		// TODO: Should I update data and UI on dedicated thread?
+		if err = UpdateSubscription(newSubscription); err != nil {
+			log.Println(err)
+			return
+		}
+		log.Println("Successfully saved")
+		updateTabs()
+	}()
+}
+
+func onRunAction() {
+	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
+	log.Printf("onRunAction client:%s\n", client)
+	runShadowsocks(shadowsocksConfig{
+		Client: client,
+		Socks:  "127.0.0.1:2080",
+	})
 }
 
 func buildToolbar() fyne.CanvasObject {
@@ -105,72 +200,18 @@ func buildToolbar() fyne.CanvasObject {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	refreshIcon, err := fyne.LoadResourceFromPath("./res/refresh.png")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	runIcon, err := fyne.LoadResourceFromPath("./res/play.png")
+	if err != nil {
+		log.Fatalln(err)
+	}
 	return widget.NewToolbar(
-		widget.NewToolbarAction(addIcon, func() {
-			// Show dialog for new subscription
-			urlEntry := widget.NewEntry()
-			form := widget.NewForm(
-				widget.NewFormItem("Url", urlEntry))
-			dialog.ShowCustomConfirm("Add subscription", "Add", "Cancel", form, func(confirmed bool) {
-				if confirmed {
-					AddSubscription(Subscription{Url: urlEntry.Text})
-				}
-			}, window)
-		}),
-		widget.NewToolbarAction(addIcon, func() {
-			// Update
-			currentSubscription := CurrentSubscription()
-			go func() {
-				response, err := http.Get(currentSubscription.Url)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				responseBody, err := ioutil.ReadAll(response.Body)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				content := string(responseBody)
-				//log.Println(content)
-				if !strings.HasPrefix(content, "ssd://") {
-					log.Println("Unsupported protocol")
-					return
-				}
-				content = content[len("ssd://"):]
-				//log.Println(content[24640])
-				//log.Println(len(content))
-				decoded, err := base64.RawStdEncoding.DecodeString(content)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				ssdData := SsdData{}
-				err = json.Unmarshal(decoded, &ssdData)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				log.Printf("Successfully updated [%s] and found %d servers\n", ssdData.Airport, len(ssdData.Servers))
-				// Now convert into config
-				profiles := make([]Profile, 0)
-				for _, server := range ssdData.Servers {
-					profiles = append(profiles, Profile{
-						Server: server.Server,
-						Remark: server.Remarks,
-					})
-				}
-				// TODO: Fix!
-				config.Subscriptions[0].Profiles = profiles
-				err = SaveConfig()
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				log.Println("Successfully saved")
-				updateTabs()
-			}()
-		}))
+		widget.NewToolbarAction(addIcon, onAddSubscriptionAction),
+		widget.NewToolbarAction(refreshIcon, onRefreshAction),
+		widget.NewToolbarAction(runIcon, onRunAction))
 }
 
 func main() {
@@ -178,14 +219,10 @@ func main() {
 	if err := LoadConfig(); err != nil {
 		log.Fatalln(err)
 	}
-	if len(config.Subscriptions) > 0 {
-		SetCurrentSubscription(config.Subscriptions[0])
-	}
 
 	application := app.New()
 
 	window = application.NewWindow("SSD Go")
-	window.SetMainMenu(newMainMenu(window))
 	window.Resize(fyne.Size{
 		Width:  800,
 		Height: 600,
