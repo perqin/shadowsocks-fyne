@@ -2,14 +2,52 @@ package main
 
 import (
 	customWidget "SSD-Go/widget"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/widget"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"strings"
 )
+
+// SSD Data
+type SsdData struct {
+	// Required fields
+	Airport    string          `json:"airport"`
+	Port       int             `json:"port"`
+	Encryption string          `json:"encryption"`
+	Password   string          `json:"password"`
+	Servers    []SsdDataServer `json:"servers"`
+	// Extended fields
+	Plugin        string `json:"plugin"`
+	PluginOptions string `json:"plugin_options"`
+	// Optional fields
+	TrafficUsed  float64 `json:"traffic_used"`
+	TrafficTotal float64 `json:"traffic_total"`
+	Expiry       string  `json:"expiry"`
+	Url          string  `json:"url"`
+}
+
+type SsdDataServer struct {
+	// Required fields
+	Server string `json:"server"`
+	// Extended fields
+	Port          int    `json:"port"`
+	Encryption    string `json:"encryption"`
+	Password      string `json:"password"`
+	Plugin        string `json:"plugin"`
+	PluginOptions string `json:"plugin_options"`
+	// Optional fields
+	Id      int     `json:"id"`
+	Remarks string  `json:"remarks"`
+	Ratio   float64 `json:"ratio"`
+}
 
 // UI widgets that should be updated on data changed
 var window fyne.Window
@@ -28,11 +66,16 @@ func updateTabs() {
 			subscriptionsTabs.RemoveIndex(0)
 		}
 		for _, subscription := range config.Subscriptions {
+			list := make([]fyne.CanvasObject, 0)
+			for _, profile := range subscription.Profiles {
+				list = append(list, widget.NewLabel(fmt.Sprintf("%s (%s)", profile.Server, profile.Remark)))
+			}
 			//subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, widget.NewLabel(fmt.Sprintf("URL: %s", subscription.Url))))
-			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, widget.NewVBox(
+			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, fyne.NewContainerWithLayout(customWidget.NewVWeightLayout(),
 				widget.NewLabel(fmt.Sprintf("URL: %s", subscription.Url)),
-				customWidget.NewSpacerContainer(false, widget.NewLabel("This is in a SpacerContainer")),
-				widget.NewLabel("Bottom"))))
+				// TODO: Add list
+				customWidget.NewWeightedItem(widget.NewScrollContainer(), 1),
+			)))
 		}
 		//window.SetContent(subscriptionsTabs)
 		subscriptionsTabs.Show()
@@ -73,6 +116,60 @@ func buildToolbar() fyne.CanvasObject {
 					AddSubscription(Subscription{Url: urlEntry.Text})
 				}
 			}, window)
+		}),
+		widget.NewToolbarAction(addIcon, func() {
+			// Update
+			currentSubscription := CurrentSubscription()
+			go func() {
+				response, err := http.Get(currentSubscription.Url)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				responseBody, err := ioutil.ReadAll(response.Body)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				content := string(responseBody)
+				//log.Println(content)
+				if !strings.HasPrefix(content, "ssd://") {
+					log.Println("Unsupported protocol")
+					return
+				}
+				content = content[len("ssd://"):]
+				//log.Println(content[24640])
+				//log.Println(len(content))
+				decoded, err := base64.RawStdEncoding.DecodeString(content)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				ssdData := SsdData{}
+				err = json.Unmarshal(decoded, &ssdData)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				log.Printf("Successfully updated [%s] and found %d servers\n", ssdData.Airport, len(ssdData.Servers))
+				// Now convert into config
+				profiles := make([]Profile, 0)
+				for _, server := range ssdData.Servers {
+					profiles = append(profiles, Profile{
+						Server: server.Server,
+						Remark: server.Remarks,
+					})
+				}
+				// TODO: Fix!
+				config.Subscriptions[0].Profiles = profiles
+				err = SaveConfig()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				log.Println("Successfully saved")
+				updateTabs()
+			}()
 		}))
 }
 
@@ -80,6 +177,9 @@ func main() {
 	// TODO: Use Preference to r/w config
 	if err := LoadConfig(); err != nil {
 		log.Fatalln(err)
+	}
+	if len(config.Subscriptions) > 0 {
+		SetCurrentSubscription(config.Subscriptions[0])
 	}
 
 	application := app.New()
