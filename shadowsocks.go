@@ -1,4 +1,6 @@
-package ss
+// TODO: Should be removed
+
+package main
 
 import (
 	"errors"
