@@ -18,10 +18,17 @@ import (
 	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
-var config struct {
+type Config struct {
 	Verbose    bool
 	UDPTimeout time.Duration
 }
+
+var DefaultConfig = Config{
+	Verbose:    false,
+	UDPTimeout: 5 * time.Minute,
+}
+
+var config = DefaultConfig
 
 var logger = log.New(os.Stderr, "", log.Lshortfile|log.LstdFlags)
 
@@ -31,22 +38,24 @@ func logf(f string, v ...interface{}) {
 	}
 }
 
+type Flags struct {
+	Client    string
+	Server    string
+	Cipher    string
+	Key       string
+	Password  string
+	Keygen    int
+	Socks     string
+	RedirTCP  string
+	RedirTCP6 string
+	TCPTun    string
+	UDPTun    string
+	UDPSocks  bool
+}
+
 func main() {
 
-	var flags struct {
-		Client    string
-		Server    string
-		Cipher    string
-		Key       string
-		Password  string
-		Keygen    int
-		Socks     string
-		RedirTCP  string
-		RedirTCP6 string
-		TCPTun    string
-		UDPTun    string
-		UDPSocks  bool
-	}
+	var flags Flags
 
 	flag.BoolVar(&config.Verbose, "verbose", false, "verbose mode")
 	flag.StringVar(&flags.Cipher, "cipher", "AEAD_CHACHA20_POLY1305", "available ciphers: "+strings.Join(core.ListCipher(), " "))
@@ -76,11 +85,27 @@ func main() {
 		return
 	}
 
+	cancel, err := Run(flags, config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+	_ = cancel()
+}
+
+func Run(flags Flags, cfg Config) (func() error, error) {
+	config = cfg
+
+	var interrupts []chan struct{}
+
 	var key []byte
 	if flags.Key != "" {
 		k, err := base64.URLEncoding.DecodeString(flags.Key)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		key = k
 	}
@@ -94,46 +119,59 @@ func main() {
 		if strings.HasPrefix(addr, "ss://") {
 			addr, cipher, password, err = parseURL(addr)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 		}
 
 		ciph, err := core.PickCipher(cipher, key, password)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		if flags.UDPTun != "" {
 			for _, tun := range strings.Split(flags.UDPTun, ",") {
 				p := strings.Split(tun, "=")
-				go udpLocal(p[0], addr, p[1], ciph.PacketConn)
+				interruptUdpTun := make(chan struct{})
+				interrupts = append(interrupts, interruptUdpTun)
+				go udpLocal(interruptUdpTun, p[0], addr, p[1], ciph.PacketConn)
 			}
 		}
 
 		if flags.TCPTun != "" {
 			for _, tun := range strings.Split(flags.TCPTun, ",") {
 				p := strings.Split(tun, "=")
-				go tcpTun(p[0], addr, p[1], ciph.StreamConn)
+				interruptTcpTun := make(chan struct{})
+				interrupts = append(interrupts, interruptTcpTun)
+				go tcpTun(interruptTcpTun, p[0], addr, p[1], ciph.StreamConn)
 			}
 		}
 
 		if flags.Socks != "" {
 			socks.UDPEnabled = flags.UDPSocks
-			go socksLocal(flags.Socks, addr, ciph.StreamConn)
+			interruptSocksLocal := make(chan struct{})
+			interrupts = append(interrupts, interruptSocksLocal)
+			go socksLocal(interruptSocksLocal, flags.Socks, addr, ciph.StreamConn)
 			if flags.UDPSocks {
-				go udpSocksLocal(flags.Socks, addr, ciph.PacketConn)
+				interruptUdpSocksLocal := make(chan struct{})
+				interrupts = append(interrupts, interruptUdpSocksLocal)
+				go udpSocksLocal(interruptUdpSocksLocal, flags.Socks, addr, ciph.PacketConn)
 			}
 		}
 
 		if flags.RedirTCP != "" {
-			go redirLocal(flags.RedirTCP, addr, ciph.StreamConn)
+			interruptRedirLocal := make(chan struct{})
+			interrupts = append(interrupts, interruptRedirLocal)
+			go redirLocal(interruptRedirLocal, flags.RedirTCP, addr, ciph.StreamConn)
 		}
 
 		if flags.RedirTCP6 != "" {
-			go redir6Local(flags.RedirTCP6, addr, ciph.StreamConn)
+			interruptRedir6Local := make(chan struct{})
+			interrupts = append(interrupts, interruptRedir6Local)
+			go redir6Local(interruptRedir6Local, flags.RedirTCP6, addr, ciph.StreamConn)
 		}
 	}
 
+	// TODO: Support cancellation for server mode
 	if flags.Server != "" { // server mode
 		addr := flags.Server
 		cipher := flags.Cipher
@@ -143,22 +181,31 @@ func main() {
 		if strings.HasPrefix(addr, "ss://") {
 			addr, cipher, password, err = parseURL(addr)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 		}
 
 		ciph, err := core.PickCipher(cipher, key, password)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		go udpRemote(addr, ciph.PacketConn)
 		go tcpRemote(addr, ciph.StreamConn)
 	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	logf("%d goroutines launched", len(interrupts))
+	return func() error {
+		for _, ch := range interrupts {
+			select {
+			case ch <- struct{}{}:
+			default:
+				logf("Fail to close some channel")
+			}
+		}
+		// TODO: There may be some goroutine not terminated yet when reaching here, because we can know whether they
+		//  have finished after receiving the data from channel. Need to refactor
+		return nil
+	}, nil
 }
 
 func parseURL(s string) (addr, cipher, password string, err error) {

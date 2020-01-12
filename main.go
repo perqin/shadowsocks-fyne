@@ -15,7 +15,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // SSD Data
@@ -190,7 +189,7 @@ func onRefreshAction() {
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
-	if err := ss.RunShadowsocks(ss.ShadowsocksConfig{
+	if err := runShadowsocks(ss.Flags{
 		Client: client,
 		Socks:  "127.0.0.1:2080",
 	}); err != nil {
@@ -199,7 +198,7 @@ func onRunAction() {
 }
 
 func onStopAction() {
-	if err := ss.StopShadowsocks(); err != nil {
+	if err := stopShadowsocks(); err != nil {
 		customWidget.Toast(fmt.Sprintf("Fail to stop: %v\n", err))
 	}
 }
@@ -261,6 +260,5 @@ func main() {
 
 	// Cleanup here
 	log.Println("Exiting")
-	_ = ss.StopShadowsocks()
-	time.Sleep(time.Second * 3)
+	_ = stopShadowsocks()
 }

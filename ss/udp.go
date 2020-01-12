@@ -21,7 +21,7 @@ const (
 const udpBufSize = 64 * 1024
 
 // Listen on laddr for UDP packets, encrypt and send to server to reach target.
-func udpLocal(laddr, server, target string, shadow func(net.PacketConn) net.PacketConn) {
+func udpLocal(interrupt chan struct{}, laddr, server, target string, shadow func(net.PacketConn) net.PacketConn) {
 	srvAddr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
 		logf("UDP server address error: %v", err)
@@ -46,8 +46,20 @@ func udpLocal(laddr, server, target string, shadow func(net.PacketConn) net.Pack
 	buf := make([]byte, udpBufSize)
 	copy(buf, tgt)
 
+	// Start a goroutine receiving interrupt request
+	interrupted := false
+	go func() {
+		<-interrupt
+		interrupted = true
+		_ = c.Close()
+	}()
+
 	logf("UDP tunnel %s <-> %s <-> %s", laddr, server, target)
 	for {
+		if interrupted {
+			logf("udpLocal: Interrupted")
+			break
+		}
 		n, raddr, err := c.ReadFrom(buf[len(tgt):])
 		if err != nil {
 			logf("UDP local read error: %v", err)
@@ -75,7 +87,7 @@ func udpLocal(laddr, server, target string, shadow func(net.PacketConn) net.Pack
 }
 
 // Listen on laddr for Socks5 UDP packets, encrypt and send to server to reach target.
-func udpSocksLocal(laddr, server string, shadow func(net.PacketConn) net.PacketConn) {
+func udpSocksLocal(interrupt chan struct{}, laddr, server string, shadow func(net.PacketConn) net.PacketConn) {
 	srvAddr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
 		logf("UDP server address error: %v", err)
@@ -92,7 +104,19 @@ func udpSocksLocal(laddr, server string, shadow func(net.PacketConn) net.PacketC
 	nm := newNATmap(config.UDPTimeout)
 	buf := make([]byte, udpBufSize)
 
+	// Start a goroutine receiving interrupt request
+	interrupted := false
+	go func() {
+		<-interrupt
+		interrupted = true
+		_ = c.Close()
+	}()
+
 	for {
+		if interrupted {
+			logf("udpSocksLocal: Interrupted")
+			break
+		}
 		n, raddr, err := c.ReadFrom(buf)
 		if err != nil {
 			logf("UDP local read error: %v", err)
