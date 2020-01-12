@@ -1,6 +1,7 @@
 package main
 
 import (
+	"SSD-Go/ss"
 	customWidget "SSD-Go/widget"
 	"encoding/base64"
 	"encoding/json"
@@ -189,7 +190,7 @@ func onRefreshAction() {
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
-	if err := RunShadowsocks(shadowsocksConfig{
+	if err := ss.RunShadowsocks(ss.ShadowsocksConfig{
 		Client: client,
 		Socks:  "127.0.0.1:2080",
 	}); err != nil {
@@ -198,7 +199,7 @@ func onRunAction() {
 }
 
 func onStopAction() {
-	if err := StopShadowsocks(); err != nil {
+	if err := ss.StopShadowsocks(); err != nil {
 		customWidget.Toast(fmt.Sprintf("Fail to stop: %v\n", err))
 	}
 }
@@ -260,6 +261,6 @@ func main() {
 
 	// Cleanup here
 	log.Println("Exiting")
-	StopShadowsocks()
+	_ = ss.StopShadowsocks()
 	time.Sleep(time.Second * 3)
 }

@@ -1,4 +1,4 @@
-package main
+package ss
 
 import (
 	"errors"
@@ -29,7 +29,7 @@ func logf(f string, v ...interface{}) {
 	//}
 }
 
-type shadowsocksConfig struct {
+type ShadowsocksConfig struct {
 	Client    string
 	Cipher    string
 	Key       string
@@ -45,7 +45,7 @@ type shadowsocksConfig struct {
 
 var cancel func() error
 
-func RunShadowsocks(flags shadowsocksConfig) (err error) {
+func RunShadowsocks(flags ShadowsocksConfig) (err error) {
 	if cancel != nil {
 		err = errors.New("an instance is already running")
 		return
@@ -66,7 +66,7 @@ func StopShadowsocks() error {
 
 // someRunSs start a shadowsocks instance with given flags.
 // TODO: Should be in shadowsocks package
-func someRunSs(flags shadowsocksConfig) (cancel func() error, err error) {
+func someRunSs(flags ShadowsocksConfig) (cancel func() error, err error) {
 	runningGroup := run.Group{}
 	addr := flags.Client
 	cipher := flags.Cipher
