@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // SSD Data
@@ -67,7 +68,6 @@ func updateTabs() {
 		for indexS, subscription := range config.Subscriptions {
 			list := make([]fyne.CanvasObject, 0)
 			for indexP, profile := range subscription.Profiles {
-				list = append(list, widget.NewLabel(fmt.Sprintf("%s (%s)", profile.Server, profile.Name)))
 				list = append(list, widget.NewHBox(
 					widget.NewLabel(fmt.Sprintf("%s (%s:%d %s)", profile.Name, profile.Server, profile.ServerPort, profile.Method)),
 					layout.NewSpacer(),
@@ -189,7 +189,7 @@ func onRefreshAction() {
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
-	runShadowsocks(shadowsocksConfig{
+	RunShadowsocks(shadowsocksConfig{
 		Client: client,
 		Socks:  "127.0.0.1:2080",
 	})
@@ -224,8 +224,8 @@ func main() {
 
 	window = application.NewWindow("SSD Go")
 	window.Resize(fyne.Size{
-		Width:  800,
-		Height: 600,
+		Width:  1200,
+		Height: 800,
 	})
 	window.CenterOnScreen()
 
@@ -244,4 +244,9 @@ func main() {
 	updateTabs()
 
 	window.ShowAndRun()
+
+	// Cleanup here
+	log.Println("Exiting")
+	StopShadowsocks()
+	time.Sleep(time.Second * 3)
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oklog/run"
 	"github.com/shadowsocks/go-shadowsocks2/core"
 )
 
@@ -43,7 +46,75 @@ type shadowsocksConfig struct {
 	UDPSocks  bool
 }
 
-func runShadowsocks(flags shadowsocksConfig) {
+var cancel func() error
+
+func RunShadowsocks(flags shadowsocksConfig) (err error) {
+	if cancel != nil {
+		err = errors.New("an instance is already running")
+		return
+	}
+	// cancel will be nil if err is not nil
+	cancel, err = someRunSs(flags)
+	return
+}
+
+func StopShadowsocks() error {
+	if cancel == nil {
+		return errors.New("no instance is running")
+	}
+	return cancel()
+}
+
+// someRunSs start a shadowsocks instance with given flags.
+// TODO: Should be in shadowsocks package
+func someRunSs(flags shadowsocksConfig) (cancel func() error, err error) {
+	runningGroup := run.Group{}
+	// For user interruption
+	//runningGroup.Add(func() error {
+	//	return <-interruptChan
+	//}, func(err error) {
+	//	select {
+	//	case interruptChan<-err:
+	//	default:
+	//	}
+	//})
+	addr := flags.Client
+	cipher := flags.Cipher
+	password := flags.Password
+	if strings.HasPrefix(addr, "ss://") {
+		addr, cipher, password, err = parseURL(addr)
+		if err != nil {
+			return
+		}
+	}
+	ciph, err := core.PickCipher(cipher, nil, password)
+	if err != nil {
+		return
+	}
+	ctx := context.Background()
+	ctx, cncl := context.WithCancel(ctx)
+	if flags.Socks != "" {
+		runningGroup.Add(func() error {
+			socksLocal(flags.Socks, addr, ciph.StreamConn)
+			return nil
+		}, func(err error) {
+			// TODO
+		})
+	}
+	runningErr := make(chan error)
+	go func() {
+		err := runningGroup.Run()
+		log.Printf("Stop running deal to %v\n", err)
+		runningErr <- err
+	}()
+	cancel = func() error {
+		cncl()
+		return <-runningErr
+	}
+	return
+}
+
+func runShadowsocks(flags shadowsocksConfig) (err error) {
 	//flag.BoolVar(&config.Verbose, "verbose", false, "verbose mode")
 	//flag.StringVar(&flags.Cipher, "cipher", "AEAD_CHACHA20_POLY1305", "available ciphers: "+strings.Join(core.ListCipher(), " "))
 	//flag.StringVar(&flags.Key, "key", "", "base64url-encoded key (derive from password if empty)")
@@ -62,7 +133,7 @@ func runShadowsocks(flags shadowsocksConfig) {
 	addr := flags.Client
 	cipher := flags.Cipher
 	password := flags.Password
-	var err error
+	//var err error
 
 	if strings.HasPrefix(addr, "ss://") {
 		addr, cipher, password, err = parseURL(addr)
@@ -109,6 +180,7 @@ func runShadowsocks(flags shadowsocksConfig) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
+	return nil
 }
 
 func parseURL(s string) (addr, cipher, password string, err error) {

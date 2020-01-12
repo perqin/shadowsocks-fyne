@@ -11,6 +11,8 @@ import (
 type Config struct {
 	Version       int            `json:"version"`
 	Subscriptions []Subscription `json:"subscriptions"`
+	LocalAddress  string         `json:"local_address"`
+	LocalPort     int            `json:"local_port"`
 }
 
 var config Config
@@ -25,6 +27,8 @@ func LoadConfig() error {
 		log.Printf("Fail to read file %s, creating default config", path)
 		config.Version = 1
 		config.Subscriptions = make([]Subscription, 0)
+		config.LocalAddress = "127.0.0.1"
+		config.LocalPort = 1180
 		return nil
 	}
 	return json.Unmarshal(bytes, &config)
