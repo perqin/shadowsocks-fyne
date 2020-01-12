@@ -189,10 +189,18 @@ func onRefreshAction() {
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
-	RunShadowsocks(shadowsocksConfig{
+	if err := RunShadowsocks(shadowsocksConfig{
 		Client: client,
 		Socks:  "127.0.0.1:2080",
-	})
+	}); err != nil {
+		customWidget.Toast(fmt.Sprintf("Fail to stop: %v\n", err))
+	}
+}
+
+func onStopAction() {
+	if err := StopShadowsocks(); err != nil {
+		customWidget.Toast(fmt.Sprintf("Fail to stop: %v\n", err))
+	}
 }
 
 func buildToolbar() fyne.CanvasObject {
@@ -208,10 +216,15 @@ func buildToolbar() fyne.CanvasObject {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	stopIcon, err := fyne.LoadResourceFromPath("./res/stop.png")
+	if err != nil {
+		log.Fatalln(err)
+	}
 	return widget.NewToolbar(
 		widget.NewToolbarAction(addIcon, onAddSubscriptionAction),
 		widget.NewToolbarAction(refreshIcon, onRefreshAction),
-		widget.NewToolbarAction(runIcon, onRunAction))
+		widget.NewToolbarAction(runIcon, onRunAction),
+		widget.NewToolbarAction(stopIcon, onStopAction))
 }
 
 func main() {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
@@ -10,9 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/oklog/run"
@@ -62,22 +59,15 @@ func StopShadowsocks() error {
 	if cancel == nil {
 		return errors.New("no instance is running")
 	}
-	return cancel()
+	cancelFunc := cancel
+	cancel = nil
+	return cancelFunc()
 }
 
 // someRunSs start a shadowsocks instance with given flags.
 // TODO: Should be in shadowsocks package
 func someRunSs(flags shadowsocksConfig) (cancel func() error, err error) {
 	runningGroup := run.Group{}
-	// For user interruption
-	//runningGroup.Add(func() error {
-	//	return <-interruptChan
-	//}, func(err error) {
-	//	select {
-	//	case interruptChan<-err:
-	//	default:
-	//	}
-	//})
 	addr := flags.Client
 	cipher := flags.Cipher
 	password := flags.Password
@@ -91,96 +81,42 @@ func someRunSs(flags shadowsocksConfig) (cancel func() error, err error) {
 	if err != nil {
 		return
 	}
-	ctx := context.Background()
-	ctx, cncl := context.WithCancel(ctx)
 	if flags.Socks != "" {
+		interruptSocksLocal := make(chan struct{})
 		runningGroup.Add(func() error {
-			socksLocal(flags.Socks, addr, ciph.StreamConn)
+			socksLocal(interruptSocksLocal, flags.Socks, addr, ciph.StreamConn)
 			return nil
 		}, func(err error) {
-			// TODO
+			select {
+			case interruptSocksLocal <- struct{}{}:
+			default:
+			}
 		})
 	}
-	runningErr := make(chan error)
+	// For user cancellation
+	cancelChan := make(chan struct{})
+	interrupt := func(err error) {
+		select {
+		case cancelChan <- struct{}{}:
+		default:
+		}
+	}
+	runningGroup.Add(func() error {
+		<-cancelChan
+		return errors.New("cancellation")
+	}, interrupt)
+	// We are ready to go
+	errChan := make(chan error)
 	go func() {
 		err := runningGroup.Run()
 		log.Printf("Stop running deal to %v\n", err)
-		runningErr <- err
+		errChan <- err
 	}()
 	cancel = func() error {
-		cncl()
-		return <-runningErr
+		interrupt(nil)
+		return <-errChan
 	}
 	return
-}
-
-func runShadowsocks(flags shadowsocksConfig) (err error) {
-	//flag.BoolVar(&config.Verbose, "verbose", false, "verbose mode")
-	//flag.StringVar(&flags.Cipher, "cipher", "AEAD_CHACHA20_POLY1305", "available ciphers: "+strings.Join(core.ListCipher(), " "))
-	//flag.StringVar(&flags.Key, "key", "", "base64url-encoded key (derive from password if empty)")
-	//flag.IntVar(&flags.Keygen, "keygen", 0, "generate a base64url-encoded random key of given length in byte")
-	//flag.StringVar(&flags.Password, "password", "", "password")
-	//flag.StringVar(&flags.Client, "c", "", "client connect address or url")
-	//flag.StringVar(&flags.Socks, "socks", "", "(client-only) SOCKS listen address")
-	//flag.BoolVar(&flags.UDPSocks, "u", false, "(client-only) Enable UDP support for SOCKS")
-	//flag.StringVar(&flags.RedirTCP, "redir", "", "(client-only) redirect TCP from this address")
-	//flag.StringVar(&flags.RedirTCP6, "redir6", "", "(client-only) redirect TCP IPv6 from this address")
-	//flag.StringVar(&flags.TCPTun, "tcptun", "", "(client-only) TCP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
-	//flag.StringVar(&flags.UDPTun, "udptun", "", "(client-only) UDP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
-	//flag.DurationVar(&config.UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
-	//flag.Parse()
-
-	addr := flags.Client
-	cipher := flags.Cipher
-	password := flags.Password
-	//var err error
-
-	if strings.HasPrefix(addr, "ss://") {
-		addr, cipher, password, err = parseURL(addr)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	ciph, err := core.PickCipher(cipher, nil, password)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//if flags.UDPTun != "" {
-	//	for _, tun := range strings.Split(flags.UDPTun, ",") {
-	//		p := strings.Split(tun, "=")
-	//		go udpLocal(p[0], addr, p[1], ciph.PacketConn)
-	//	}
-	//}
-
-	//if flags.TCPTun != "" {
-	//	for _, tun := range strings.Split(flags.TCPTun, ",") {
-	//		p := strings.Split(tun, "=")
-	//		go tcpTun(p[0], addr, p[1], ciph.StreamConn)
-	//	}
-	//}
-
-	if flags.Socks != "" {
-		//socks.UDPEnabled = flags.UDPSocks
-		go socksLocal(flags.Socks, addr, ciph.StreamConn)
-		//if flags.UDPSocks {
-		//	go udpSocksLocal(flags.Socks, addr, ciph.PacketConn)
-		//}
-	}
-
-	//if flags.RedirTCP != "" {
-	//	go redirLocal(flags.RedirTCP, addr, ciph.StreamConn)
-	//}
-	//
-	//if flags.RedirTCP6 != "" {
-	//	go redir6Local(flags.RedirTCP6, addr, ciph.StreamConn)
-	//}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
-	return nil
 }
 
 func parseURL(s string) (addr, cipher, password string, err error) {
@@ -201,13 +137,13 @@ func parseURL(s string) (addr, cipher, password string, err error) {
 // Copied from go-shadowsocks2/tcp.go
 
 // Create a SOCKS server listening on addr and proxy to server.
-func socksLocal(addr, server string, shadow func(net.Conn) net.Conn) {
+func socksLocal(interrupt chan struct{}, addr, server string, shadow func(net.Conn) net.Conn) {
 	logf("SOCKS proxy %s <-> %s", addr, server)
-	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return socks.Handshake(c) })
+	tcpLocal(interrupt, addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return socks.Handshake(c) })
 }
 
 // Listen on addr and proxy to server to reach target from getAddr.
-func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(net.Conn) (socks.Addr, error)) {
+func tcpLocal(interrupt chan struct{}, addr, server string, shadow func(net.Conn) net.Conn, getAddr func(net.Conn) (socks.Addr, error)) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		logf("failed to listen on %s: %v", addr, err)
@@ -215,6 +151,15 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 	}
 
 	for {
+		interrupted := false
+		select {
+		case <-interrupt:
+			interrupted = true
+		default:
+		}
+		if interrupted {
+			break
+		}
 		c, err := l.Accept()
 		if err != nil {
 			logf("failed to accept: %s", err)
@@ -269,6 +214,8 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 			}
 		}()
 	}
+	logf("close %s", addr)
+	l.Close()
 }
 
 // relay copies between left and right bidirectionally. Returns number of
