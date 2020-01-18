@@ -1,7 +1,6 @@
 package main
 
 import (
-	"SSD-Go/ss"
 	customWidget "SSD-Go/widget"
 	"encoding/base64"
 	"encoding/json"
@@ -11,10 +10,12 @@ import (
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/widget"
+	"github.com/perqin/go-shadowsocks2"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // SSD Data
@@ -189,7 +190,7 @@ func onRefreshAction() {
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
-	if err := runShadowsocks(ss.Flags{
+	if err := runShadowsocks(shadowsocks2.Flags{
 		Client: client,
 		Socks:  "127.0.0.1:2080",
 	}); err != nil {
@@ -232,6 +233,10 @@ func main() {
 	if err := LoadConfig(); err != nil {
 		log.Fatalln(err)
 	}
+	shadowsocks2.SetConfig(shadowsocks2.Config{
+		Verbose:    true,
+		UDPTimeout: time.Minute * 5,
+	})
 
 	application := app.New()
 
