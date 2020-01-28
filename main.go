@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
+	"image/color"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -57,6 +58,27 @@ var emptyTab = widget.NewTabItem("", fyne.NewContainer())
 var subscriptionsTabs *widget.TabContainer
 var noSubscriptionsObject fyne.CanvasObject
 
+func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
+	list := make([]fyne.CanvasObject, 0)
+	itemHeight := 64
+	for indexP, profile := range subscription.Profiles {
+		indexP := indexP
+		selectionIndicator := customWidget.NewColoredBox()
+		selectionIndicator.Resize(fyne.Size{Width: 8, Height: itemHeight})
+		selectionIndicator.SetBackgroundColor(color.Transparent)
+		if index == subscriptionIndex && indexP == profileIndex {
+			selectionIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
+		}
+		listItemContent := customWidget.NewTwoLineListItem(profile.Name, fmt.Sprintf("%s:%d", profile.Server, profile.ServerPort))
+		list = append(list, customWidget.NewTappableWidget(
+			fyne.NewContainerWithLayout(customWidget.NewStackLayout(), selectionIndicator, listItemContent),
+			func() {
+				selectProfile(index, indexP, selectionIndicator)
+			}))
+	}
+	return widget.NewScrollContainer(widget.NewVBox(list...))
+}
+
 func updateTabs() {
 	if len(config.Subscriptions) == 0 {
 		subscriptionsTabs.Hide()
@@ -67,19 +89,7 @@ func updateTabs() {
 			subscriptionsTabs.RemoveIndex(0)
 		}
 		for indexS, subscription := range config.Subscriptions {
-			list := make([]fyne.CanvasObject, 0)
-			for indexP, profile := range subscription.Profiles {
-				list = append(list, widget.NewHBox(
-					widget.NewLabel(fmt.Sprintf("%s (%s:%d %s)", profile.Name, profile.Server, profile.ServerPort, profile.Method)),
-					layout.NewSpacer(),
-					widget.NewButton("Select", func() {
-						selectProfile(indexS, indexP)
-					})))
-			}
-			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, fyne.NewContainerWithLayout(customWidget.NewVWeightLayout(),
-				widget.NewLabel(fmt.Sprintf("URL: %s", subscription.Url)),
-				customWidget.NewWeightedItem(widget.NewScrollContainer(widget.NewVBox(list...)), 1),
-			)))
+			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, buildServerList(indexS, subscription)))
 		}
 		subscriptionsTabs.Show()
 		noSubscriptionsObject.Hide()
@@ -89,12 +99,17 @@ func updateTabs() {
 var subscriptionIndex = -1
 var profileIndex = -1
 var profile Profile
+var selectedIndicator *customWidget.ColoredBox
 
-func selectProfile(si, pi int) {
+func selectProfile(si, pi int, indicator *customWidget.ColoredBox) {
+	if selectedIndicator != nil {
+		selectedIndicator.SetBackgroundColor(color.Transparent)
+	}
 	subscriptionIndex = si
 	profileIndex = pi
 	profile = config.Subscriptions[si].Profiles[pi]
-	log.Printf("Selected Subcription:%s Profile:%s\n", config.Subscriptions[si].Name, profile.Name)
+	selectedIndicator = indicator
+	selectedIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
 }
 
 func onAddSubscriptionAction() {

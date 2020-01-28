@@ -12,7 +12,7 @@ type WrapperWidget struct {
 	Content fyne.CanvasObject
 }
 
-func (w *weightedItem) CreateRenderer() fyne.WidgetRenderer {
+func (w *WrapperWidget) CreateRenderer() fyne.WidgetRenderer {
 	w.ExtendBaseWidget(w)
 
 	return &wrapperWidgetRenderer{content: w.Content}
