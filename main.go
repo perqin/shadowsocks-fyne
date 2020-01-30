@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/dialog"
-	"fyne.io/fyne/layout"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
 	"image/color"
@@ -54,9 +53,7 @@ type SsdDataServer struct {
 
 // UI widgets that should be updated on data changed
 var window fyne.Window
-var emptyTab = widget.NewTabItem("", fyne.NewContainer())
 var subscriptionsTabs *widget.TabContainer
-var noSubscriptionsObject fyne.CanvasObject
 
 func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
 	list := make([]fyne.CanvasObject, 0)
@@ -66,7 +63,7 @@ func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
 		selectionIndicator := customWidget.NewColoredBox()
 		selectionIndicator.Resize(fyne.Size{Width: 8, Height: itemHeight})
 		selectionIndicator.SetBackgroundColor(color.Transparent)
-		if index == subscriptionIndex && indexP == profileIndex {
+		if index == config.CurrentProfileSubscription && indexP == config.CurrentProfile {
 			selectionIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
 		}
 		listItemContent := customWidget.NewTwoLineListItem(profile.Name, fmt.Sprintf("%s:%d", profile.Server, profile.ServerPort))
@@ -79,25 +76,35 @@ func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
 	return widget.NewScrollContainer(widget.NewVBox(list...))
 }
 
-func updateTabs() {
-	if len(config.Subscriptions) == 0 {
-		subscriptionsTabs.Hide()
-		noSubscriptionsObject.Show()
-	} else {
-		// Clear old tabs
-		for len(subscriptionsTabs.Items) != 0 {
-			subscriptionsTabs.RemoveIndex(0)
-		}
-		for indexS, subscription := range config.Subscriptions {
-			subscriptionsTabs.Append(widget.NewTabItem(subscription.Name, buildServerList(indexS, subscription)))
-		}
-		subscriptionsTabs.Show()
-		noSubscriptionsObject.Hide()
+func buildTabs() []*widget.TabItem {
+	var item []*widget.TabItem
+	for indexS, subscription := range config.Subscriptions {
+		item = append(item, widget.NewTabItem(subscription.Name, buildServerList(indexS, subscription)))
 	}
+	return item
 }
 
-var subscriptionIndex = -1
-var profileIndex = -1
+func updateTabs() {
+	// Ensure refresh not crash
+	subscriptionsTabs.SelectTabIndex(0)
+	// Ensure same item count
+	for len(subscriptionsTabs.Items) != len(config.Subscriptions) {
+		if len(subscriptionsTabs.Items) < len(config.Subscriptions) {
+			subscriptionsTabs.Append(widget.NewTabItem("", widget.NewHBox()))
+		} else {
+			subscriptionsTabs.RemoveIndex(0)
+		}
+	}
+	// Ensure correct UI
+	for i, s := range config.Subscriptions {
+		tab := subscriptionsTabs.Items[i]
+		tab.Text = s.Name
+		tab.Content = buildServerList(i, s)
+	}
+	// And refresh!
+	subscriptionsTabs.Refresh()
+}
+
 var profile Profile
 var selectedIndicator *customWidget.ColoredBox
 
@@ -105,23 +112,54 @@ func selectProfile(si, pi int, indicator *customWidget.ColoredBox) {
 	if selectedIndicator != nil {
 		selectedIndicator.SetBackgroundColor(color.Transparent)
 	}
-	subscriptionIndex = si
-	profileIndex = pi
+	selectCurrentProfile(si, pi)
 	profile = config.Subscriptions[si].Profiles[pi]
 	selectedIndicator = indicator
 	selectedIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
 }
 
-func onAddSubscriptionAction() {
+func showEditSubscriptionDialog(index int) {
+	if index == 0 {
+		log.Println("The Subscription for custom profiles cannot be edited.")
+		return
+	}
+	edit := index != -1
+	if edit && (index < 0 || index >= len(config.Subscriptions)) {
+		log.Println(fmt.Sprintf("Invalid index %d", index))
+		return
+	}
+	var subscription Subscription
+	if edit {
+		subscription = config.Subscriptions[index]
+	}
 	// Show dialog for new subscription
 	urlEntry := widget.NewEntry()
+	if edit {
+		urlEntry.Text = subscription.Url
+	}
 	form := widget.NewForm(
 		widget.NewFormItem("Url", urlEntry))
 	dialog.ShowCustomConfirm("Add subscription", "Add", "Cancel", form, func(confirmed bool) {
 		if confirmed {
-			AddSubscription(Subscription{Url: urlEntry.Text})
+			if edit {
+				// Update subscription
+				subscription.Url = urlEntry.Text
+				SaveSubscription(index, subscription)
+			} else {
+				// Add new one
+				AddSubscription(Subscription{
+					Name: "(Untitled)",
+					Url:  urlEntry.Text,
+				})
+			}
+			updateTabs()
 		}
 	}, window)
+
+}
+
+func onAddSubscriptionAction() {
+	showEditSubscriptionDialog(-1)
 }
 
 func onRefreshAction() {
@@ -202,6 +240,21 @@ func onRefreshAction() {
 	}()
 }
 
+func onEditSubscriptionAction() {
+	showEditSubscriptionDialog(config.CurrentProfileSubscription)
+}
+
+func onRemoveSubscriptionAction() {
+	subscriptionIndex := subscriptionsTabs.CurrentTabIndex()
+	err := removeSubscription(subscriptionIndex)
+	if err == nil {
+		subscriptionsTabs.SelectTabIndex(0)
+		updateTabs()
+	} else {
+		log.Println(err)
+	}
+}
+
 func onRunAction() {
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
@@ -219,28 +272,20 @@ func onStopAction() {
 	}
 }
 
+func onEditProfileAction() {
+	// TODO
+}
+
 func buildToolbar() fyne.CanvasObject {
-	addIcon, err := fyne.LoadResourceFromPath("./res/add.png")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	refreshIcon, err := fyne.LoadResourceFromPath("./res/refresh.png")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	runIcon, err := fyne.LoadResourceFromPath("./res/play.png")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	stopIcon, err := fyne.LoadResourceFromPath("./res/stop.png")
-	if err != nil {
-		log.Fatalln(err)
-	}
 	return widget.NewToolbar(
 		widget.NewToolbarAction(addIcon, onAddSubscriptionAction),
 		widget.NewToolbarAction(refreshIcon, onRefreshAction),
-		widget.NewToolbarAction(runIcon, onRunAction),
-		widget.NewToolbarAction(stopIcon, onStopAction))
+		widget.NewToolbarAction(editSubscriptionIcon, onEditSubscriptionAction),
+		widget.NewToolbarAction(deleteIcon, onRemoveSubscriptionAction),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(playIcon, onRunAction),
+		widget.NewToolbarAction(stopIcon, onStopAction),
+		widget.NewToolbarAction(editProfileIcon, onEditProfileAction))
 }
 
 func main() {
@@ -263,18 +308,11 @@ func main() {
 	window.CenterOnScreen()
 
 	// At least 1 tab is required, or index out of range is thrown
-	subscriptionsTabs = widget.NewTabContainer(emptyTab)
+	subscriptionsTabs = widget.NewTabContainer(buildTabs()...)
 	subscriptionsTabs.SetTabLocation(widget.TabLocationLeading)
-	noSubscriptionsObject = fyne.NewContainerWithLayout(layout.NewCenterLayout(), widget.NewLabel("No subscriptions."))
-	subscriptionsOrNothing := fyne.NewContainerWithLayout(layout.NewMaxLayout(),
-		subscriptionsTabs,
-		noSubscriptionsObject)
 	window.SetContent(fyne.NewContainerWithLayout(customWidget.NewVWeightLayout(),
 		buildToolbar(),
-		customWidget.NewWeightedItem(subscriptionsOrNothing, 1)))
-
-	// Update UI
-	updateTabs()
+		customWidget.NewWeightedItem(subscriptionsTabs, 1)))
 
 	window.ShowAndRun()
 

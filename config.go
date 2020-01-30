@@ -9,10 +9,12 @@ import (
 )
 
 type Config struct {
-	Version       int            `json:"version"`
-	Subscriptions []Subscription `json:"subscriptions"`
-	LocalAddress  string         `json:"local_address"`
-	LocalPort     int            `json:"local_port"`
+	Version                    int            `json:"version"`
+	Subscriptions              []Subscription `json:"subscriptions"`
+	LocalAddress               string         `json:"local_address"`
+	LocalPort                  int            `json:"local_port"`
+	CurrentProfile             int            `json:"current_profile"`
+	CurrentProfileSubscription int            `json:"current_profile_subscription"`
 }
 
 var config Config
@@ -26,10 +28,18 @@ func LoadConfig() error {
 	if err != nil {
 		log.Printf("Fail to read file %s, creating default config", path)
 		config.Version = 1
-		config.Subscriptions = make([]Subscription, 0)
+		config.Subscriptions = []Subscription{
+			{
+				Url:      "",
+				Name:     "Custom",
+				Profiles: nil,
+			},
+		}
 		config.LocalAddress = "127.0.0.1"
 		config.LocalPort = 1180
-		return nil
+		config.CurrentProfile = -1
+		config.CurrentProfileSubscription = -1
+		return SaveConfig()
 	}
 	return json.Unmarshal(bytes, &config)
 }
@@ -56,7 +66,7 @@ func getConfigFile() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	return os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 }
 
 func getConfigFilePath() (string, error) {
