@@ -1,6 +1,9 @@
 package main
 
-import "log"
+import (
+	"errors"
+	"log"
+)
 
 type Profile struct {
 	Name       string `json:"name"`
@@ -17,4 +20,20 @@ func selectCurrentProfile(profile, subscription int) {
 	if err := SaveConfig(); err != nil {
 		log.Println(err)
 	}
+}
+
+func addProfile(si int, p Profile) error {
+	if si != 0 {
+		return errors.New("only custom profile can be edit")
+	}
+	config.Subscriptions[si].Profiles = append(config.Subscriptions[si].Profiles, p)
+	return SaveConfig()
+}
+
+func saveProfile(si, pi int, p Profile) error {
+	if si != 0 {
+		return errors.New("only custom profile can be edit")
+	}
+	config.Subscriptions[si].Profiles[pi] = p
+	return SaveConfig()
 }

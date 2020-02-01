@@ -7,12 +7,13 @@ import (
 )
 
 var addIcon = loadResourceForSure("add.png")
-var deleteIcon = loadResourceForSure("delete.png")
-var editProfileIcon = loadResourceForSure("edit_profile.png")
-var editSubscriptionIcon = loadResourceForSure("edit_subscription.png")
-var playIcon = loadResourceForSure("play.png")
 var refreshIcon = loadResourceForSure("refresh.png")
+var editSubscriptionIcon = loadResourceForSure("edit_subscription.png")
+var deleteIcon = loadResourceForSure("delete.png")
+var addProfileIcon = loadResourceForSure("add_profile.png")
+var playIcon = loadResourceForSure("play.png")
 var stopIcon = loadResourceForSure("stop.png")
+var editProfileIcon = loadResourceForSure("edit_profile.png")
 
 func loadResourceForSure(filename string) (res fyne.Resource) {
 	var err error

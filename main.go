@@ -10,10 +10,10 @@ import (
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
-	"image/color"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,24 +54,27 @@ type SsdDataServer struct {
 // UI widgets that should be updated on data changed
 var window fyne.Window
 var subscriptionsTabs *widget.TabContainer
+var currentProfileWidget *ProfileWidget
 
 func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
 	list := make([]fyne.CanvasObject, 0)
-	itemHeight := 64
 	for indexP, profile := range subscription.Profiles {
 		indexP := indexP
-		selectionIndicator := customWidget.NewColoredBox()
-		selectionIndicator.Resize(fyne.Size{Width: 8, Height: itemHeight})
-		selectionIndicator.SetBackgroundColor(color.Transparent)
-		if index == config.CurrentProfileSubscription && indexP == config.CurrentProfile {
-			selectionIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
+		profileWidget := NewProfileWidget()
+		profileWidget.OnTapped = func() {
+			if currentProfileWidget != nil {
+				currentProfileWidget.Selected = false
+				currentProfileWidget.Refresh()
+			}
+			currentProfileWidget = profileWidget
+			selectCurrentProfile(indexP, index)
 		}
-		listItemContent := customWidget.NewTwoLineListItem(profile.Name, fmt.Sprintf("%s:%d", profile.Server, profile.ServerPort))
-		list = append(list, customWidget.NewTappableWidget(
-			fyne.NewContainerWithLayout(customWidget.NewStackLayout(), selectionIndicator, listItemContent),
-			func() {
-				selectProfile(index, indexP, selectionIndicator)
-			}))
+		profileWidget.Profile = profile
+		if index == config.CurrentProfileSubscription && indexP == config.CurrentProfile {
+			profileWidget.Selected = true
+		}
+		profileWidget.Refresh()
+		list = append(list, profileWidget)
 	}
 	return widget.NewScrollContainer(widget.NewVBox(list...))
 }
@@ -103,19 +106,6 @@ func updateTabs() {
 	}
 	// And refresh!
 	subscriptionsTabs.Refresh()
-}
-
-var profile Profile
-var selectedIndicator *customWidget.ColoredBox
-
-func selectProfile(si, pi int, indicator *customWidget.ColoredBox) {
-	if selectedIndicator != nil {
-		selectedIndicator.SetBackgroundColor(color.Transparent)
-	}
-	selectCurrentProfile(si, pi)
-	profile = config.Subscriptions[si].Profiles[pi]
-	selectedIndicator = indicator
-	selectedIndicator.SetBackgroundColor(fyne.CurrentApp().Settings().Theme().PrimaryColor())
 }
 
 func showEditSubscriptionDialog(index int) {
@@ -256,6 +246,18 @@ func onRemoveSubscriptionAction() {
 }
 
 func onRunAction() {
+	// TODO
+	si := config.CurrentProfileSubscription
+	if si < 0 || si >= len(config.Subscriptions) {
+		log.Printf("Invalid index %d\n", si)
+		return
+	}
+	pi := config.CurrentProfile
+	if pi < 0 || pi >= len(config.Subscriptions[si].Profiles) {
+		log.Printf("Invalid index %d %d\n", si, pi)
+		return
+	}
+	profile := config.Subscriptions[si].Profiles[pi]
 	client := fmt.Sprintf("ss://%s:%s@%s:%d", profile.Method, profile.Password, profile.Server, profile.ServerPort)
 	log.Printf("onRunAction client:%s\n", client)
 	if err := runShadowsocks(shadowsocks2.Flags{
@@ -272,8 +274,81 @@ func onStopAction() {
 	}
 }
 
+func showEditProfileDialog(edit bool) {
+	var si, pi int
+	var profile Profile
+	if edit {
+		si = config.CurrentProfileSubscription
+		pi = config.CurrentProfile
+		if si != subscriptionsTabs.CurrentTabIndex() {
+			log.Println("Please switch to the tab containing the profile you want to edit.")
+			return
+		}
+		if si < 0 || si >= len(config.Subscriptions) {
+			log.Printf("Invalid subscription index %d\n", si)
+			return
+		}
+		if pi < 0 || pi >= len(config.Subscriptions[si].Profiles) {
+			log.Printf("Invalid profile index %d\n", pi)
+			return
+		}
+		profile = config.Subscriptions[si].Profiles[pi]
+	} else {
+		si = subscriptionsTabs.CurrentTabIndex()
+	}
+	// Can show dialog now
+	nameEntry := widget.NewEntry()
+	serverEntry := widget.NewEntry()
+	portEntry := widget.NewEntry()
+	methodEntry := widget.NewEntry()
+	passwordEntry := widget.NewEntry()
+	if edit {
+		nameEntry.Text = profile.Name
+		serverEntry.Text = profile.Server
+		portEntry.Text = fmt.Sprint(profile.ServerPort)
+		methodEntry.Text = profile.Method
+		passwordEntry.Text = profile.Password
+	}
+	form := widget.NewForm(
+		widget.NewFormItem("Name", nameEntry),
+		widget.NewFormItem("Server", serverEntry),
+		widget.NewFormItem("Port", portEntry),
+		widget.NewFormItem("Method", methodEntry),
+		widget.NewFormItem("Password", passwordEntry))
+	dialog.ShowCustomConfirm("Edit Profile", "Save", "Cancel", form, func(confirmed bool) {
+		if confirmed {
+			profile.Name = nameEntry.Text
+			profile.Server = serverEntry.Text
+			// TODO: Validate
+			profile.ServerPort, _ = strconv.Atoi(portEntry.Text)
+			profile.Method = methodEntry.Text
+			profile.Password = passwordEntry.Text
+			var err error
+			if edit {
+				if si != 0 {
+					log.Println("Only custom profile can be edited.")
+					return
+				}
+				err = saveProfile(si, pi, profile)
+			} else {
+				err = addProfile(si, profile)
+			}
+			if err != nil {
+				log.Println(err)
+			} else {
+				// TODO: Performance issue
+				updateTabs()
+			}
+		}
+	}, window)
+}
+
+func onAddProfileAction() {
+	showEditProfileDialog(false)
+}
+
 func onEditProfileAction() {
-	// TODO
+	showEditProfileDialog(true)
 }
 
 func buildToolbar() fyne.CanvasObject {
@@ -285,6 +360,7 @@ func buildToolbar() fyne.CanvasObject {
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarAction(playIcon, onRunAction),
 		widget.NewToolbarAction(stopIcon, onStopAction),
+		widget.NewToolbarAction(addProfileIcon, onAddProfileAction),
 		widget.NewToolbarAction(editProfileIcon, onEditProfileAction))
 }
 
