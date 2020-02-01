@@ -1,2 +1,3 @@
-# SSD-Go
-依附于go-shadowsocks2并跟随更新
+# Shadowsocks Fyne
+
+Shadowsocks GUI client written in Go. Powered by Fyne GUI toolkit.

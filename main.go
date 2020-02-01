@@ -1,7 +1,6 @@
 package main
 
 import (
-	customWidget "SSD-Go/widget"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
+	customWidget "github.com/perqin/shadowsocks-fyne/widget"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -18,6 +18,8 @@ import (
 	"time"
 )
 
+// TODO: Drop direct ssd:// support and follow the subscription protocol by official Shadowsocks project
+//  Maybe the support for other protocols can be met with the help of subconverter project.
 // SSD Data
 type SsdData struct {
 	// Required fields
@@ -376,7 +378,7 @@ func main() {
 
 	application := app.New()
 
-	window = application.NewWindow("SSD Go")
+	window = application.NewWindow("Shadowsocks Fyne")
 	window.Resize(fyne.Size{
 		Width:  1200,
 		Height: 800,

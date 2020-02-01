@@ -1,4 +1,4 @@
-module SSD-Go
+module github.com/perqin/shadowsocks-fyne
 
 go 1.13
 
