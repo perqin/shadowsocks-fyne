@@ -69,14 +69,25 @@ func getConfigFile() (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 }
 
+// getConfigFilePath returns the path of the config file. It ensures that the parent directory is created.
+// TODO: Migrate from `getConfigDirPath` to Preference API:
+//  > @andy.xyz: The plan is that we will create a way for developers to ask for a new storage file so the library can
+//  > track them - that way we will be able to keep your app data in sync across computers eventually
+//  > The preferences api was a start and we have more to do in that space
+//  See https://gophers.slack.com/archives/CB4QUBXGQ/p1580730440194900.
 func getConfigFilePath() (string, error) {
-	userHomeDir, err := os.UserHomeDir()
+	dir, err := getConfigDirPath()
 	if err != nil {
 		return "", err
 	}
-	configDir := filepath.Join(userHomeDir, ".ssd-go")
-	if err = os.MkdirAll(configDir, 0755); err != nil {
+	_, err = os.Stat(dir)
+	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	return filepath.Join(configDir, "config.json"), nil
+	if os.IsNotExist(err) {
+		if err = os.MkdirAll(dir, 0700); err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(dir, "config.json"), nil
 }

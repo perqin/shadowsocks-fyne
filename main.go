@@ -47,10 +47,11 @@ func setupSignals() {
 }
 
 var application fyne.App
+var applicationId = "shadowsocks-fyne"
 
 func startupFyneGui() {
 	// Setup GUI
-	application = app.New()
+	application = app.NewWithID(applicationId)
 	// A invisible window is required, otherwise the Fyne will exit after all windows are closed
 	application.NewWindow("")
 	// Show main window if needed
