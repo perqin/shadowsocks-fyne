@@ -285,7 +285,7 @@ func onRunAction() {
 	log.Printf("onRunAction client:%s\n", client)
 	if err := runShadowsocks(shadowsocks2.Flags{
 		Client: client,
-		Socks:  "127.0.0.1:2080",
+		Socks:  fmt.Sprintf("%s:%d", config.LocalAddress, config.LocalPort),
 	}); err != nil {
 		customWidget.Toast(fmt.Sprintf("Fail to stop: %v\n", err))
 	}
