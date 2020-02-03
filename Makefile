@@ -6,18 +6,14 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 
 # Binary names
-BINARY_NAME=shadowsocks-fyne.exe
+BINARY_NAME=shadowsocks-fyne
 
-build:
-	$(GOBUILD) -o $(BINARY_NAME) -v
+build: linux win64
 
-RSRC=rsrc -manifest ./assets/app.manifest -o rsrc.syso
+linux:
+	$(GOBUILD) -o $(BINARY_NAME)-$@ -v
 
-build-win64:
+win64:
 	$(GOGET) github.com/akavel/rsrc
-	$(RSRC) -arch amd64
-	#$(GOBUILD) -o $(BINARY_NAME) -v
-	$(GOBUILD) -o $(BINARY_NAME) -ldflags -H=windowsgui -v
-
-run-win64: build-win64
-	FYNE_SCALE=2.5 ./$(BINARY_NAME)
+	rsrc -manifest ./assets/app.manifest -o rsrc.syso -arch amd64
+	$(GOBUILD) -o $(BINARY_NAME)-$@.exe -ldflags -H=windowsgui -v
