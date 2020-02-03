@@ -6,6 +6,9 @@ import (
 	"fyne.io/fyne/app"
 	"github.com/perqin/go-shadowsocks2"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -26,12 +29,23 @@ func main() {
 		UDPTimeout: time.Minute * 5,
 	})
 
+	setupSignals()
 	setupSystemTray()
-
 	startupFyneGui()
 }
 
 var appName = "Shadowsocks Fyne"
+
+func setupSignals() {
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("Received SIGINT or SIGTERM")
+		exitApp()
+	}()
+}
+
 var application fyne.App
 
 func startupFyneGui() {
@@ -47,11 +61,12 @@ func startupFyneGui() {
 	application.Driver().Run()
 }
 
-// exitApp performs necessary cleanups before the process terminates.
+// exitApp performs necessary cleanups and then exit the application
 func exitApp() {
 	if mainWindow != nil {
 		mainWindow.Close()
 	}
-	application.Quit()
 	_ = stopShadowsocks()
+	// Quit must be called on the last, because it will break the blocking main thread
+	application.Quit()
 }

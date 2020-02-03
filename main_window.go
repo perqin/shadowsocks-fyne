@@ -374,6 +374,32 @@ func onEditProfileAction() {
 	showEditProfileDialog(true)
 }
 
+func onSettingsAction() {
+	localAddressEntry := widget.NewEntry()
+	localAddressEntry.SetText(config.LocalAddress)
+	localPortEntry := widget.NewEntry()
+	localPortEntry.SetText(strconv.Itoa(config.LocalPort))
+	form := widget.NewForm(
+		widget.NewFormItem("Local address", localAddressEntry),
+		widget.NewFormItem("Local port", localPortEntry))
+	dialog.ShowCustomConfirm("Settings", "Save", "Cancel", form, func(confirmed bool) {
+		if confirmed {
+			// Update settings
+			localAddress := localAddressEntry.Text
+			localPort, err := strconv.Atoi(localPortEntry.Text)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			config.LocalAddress = localAddress
+			config.LocalPort = localPort
+			if err = SaveConfig(); err != nil {
+				log.Println(err)
+			}
+		}
+	}, mainWindow)
+}
+
 func buildToolbar() fyne.CanvasObject {
 	return widget.NewToolbar(
 		widget.NewToolbarAction(addIcon, onAddSubscriptionAction),
@@ -384,5 +410,7 @@ func buildToolbar() fyne.CanvasObject {
 		widget.NewToolbarAction(playIcon, onRunAction),
 		widget.NewToolbarAction(stopIcon, onStopAction),
 		widget.NewToolbarAction(addProfileIcon, onAddProfileAction),
-		widget.NewToolbarAction(editProfileIcon, onEditProfileAction))
+		widget.NewToolbarAction(editProfileIcon, onEditProfileAction),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(settingsIcon, onSettingsAction))
 }

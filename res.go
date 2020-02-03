@@ -14,6 +14,7 @@ var addProfileIcon = loadResourceForSure("add_profile.png")
 var playIcon = loadResourceForSure("play.png")
 var stopIcon = loadResourceForSure("stop.png")
 var editProfileIcon = loadResourceForSure("edit_profile.png")
+var settingsIcon = loadResourceForSure("settings.png")
 
 func loadResourceForSure(filename string) (res fyne.Resource) {
 	var err error
