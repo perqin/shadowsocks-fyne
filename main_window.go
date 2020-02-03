@@ -106,16 +106,20 @@ func showEditSubscriptionDialog(index int) {
 		subscription = config.Subscriptions[index]
 	}
 	// Show dialog for new subscription
+	nameEntry := widget.NewEntry()
 	urlEntry := widget.NewEntry()
 	if edit {
-		urlEntry.Text = subscription.Url
+		nameEntry.SetText(subscription.Name)
+		urlEntry.SetText(subscription.Url)
 	}
 	form := widget.NewForm(
+		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("Url", urlEntry))
 	dialog.ShowCustomConfirm("Add subscription", "Add", "Cancel", form, func(confirmed bool) {
 		if confirmed {
 			if edit {
 				// Update subscription
+				subscription.Name = nameEntry.Text
 				subscription.Url = urlEntry.Text
 				SaveSubscription(index, subscription)
 			} else {
