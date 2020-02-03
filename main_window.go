@@ -1,19 +1,14 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"fyne.io/fyne"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
 	customWidget "github.com/perqin/shadowsocks-fyne/widget"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"strconv"
-	"strings"
 )
 
 var mainWindow fyne.Window
@@ -38,41 +33,6 @@ func showMainWindow() {
 		buildToolbar(),
 		customWidget.NewWeightedItem(subscriptionsTabs, 1)))
 	mainWindow.Show()
-}
-
-// TODO: Drop direct ssd:// support and follow the subscription protocol by official Shadowsocks project
-//  Maybe the support for other protocols can be met with the help of subconverter project.
-// SSD Data
-type SsdData struct {
-	// Required fields
-	Airport    string          `json:"airport"`
-	Port       int             `json:"port"`
-	Encryption string          `json:"encryption"`
-	Password   string          `json:"password"`
-	Servers    []SsdDataServer `json:"servers"`
-	// Extended fields
-	Plugin        string `json:"plugin"`
-	PluginOptions string `json:"plugin_options"`
-	// Optional fields
-	TrafficUsed  float64 `json:"traffic_used"`
-	TrafficTotal float64 `json:"traffic_total"`
-	Expiry       string  `json:"expiry"`
-	Url          string  `json:"url"`
-}
-
-type SsdDataServer struct {
-	// Required fields
-	Server string `json:"server"`
-	// Extended fields
-	Port          int    `json:"port"`
-	Encryption    string `json:"encryption"`
-	Password      string `json:"password"`
-	Plugin        string `json:"plugin"`
-	PluginOptions string `json:"plugin_options"`
-	// Optional fields
-	Id      int     `json:"id"`
-	Remarks string  `json:"remarks"`
-	Ratio   float64 `json:"ratio"`
 }
 
 // UI widgets that should be updated on data changed
@@ -176,79 +136,12 @@ func onAddSubscriptionAction() {
 }
 
 func onRefreshAction() {
-	// Update
-	index := subscriptionsTabs.CurrentTabIndex()
-	size := len(config.Subscriptions)
-	if index < 0 || index >= size {
-		customWidget.Toast("Index out of bound")
-		return
-	}
-	url := config.Subscriptions[index].Url
 	go func() {
-		directClient := http.Client{Transport: &http.Transport{Proxy: nil}}
-		response, err := directClient.Get(url)
+		err := UpdateSubscription(subscriptionsTabs.CurrentTabIndex())
 		if err != nil {
-			log.Println(err)
+			customWidget.Toast(err.Error())
 			return
 		}
-		responseBody, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		content := string(responseBody)
-		//log.Println(content)
-		protocolPrefix := "ssd://"
-		if !strings.HasPrefix(content, protocolPrefix) {
-			log.Println("Unsupported protocol")
-			return
-		}
-		content = content[len(protocolPrefix):]
-		decoded, err := base64.RawStdEncoding.DecodeString(content)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		ssdData := SsdData{}
-		err = json.Unmarshal(decoded, &ssdData)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		log.Printf("Successfully updated [%s] and found %d servers\n", ssdData.Airport, len(ssdData.Servers))
-		// Now convert into config
-		newSubscription := Subscription{
-			Url:      url,
-			Name:     ssdData.Airport,
-			Profiles: nil,
-		}
-		for _, server := range ssdData.Servers {
-			var method string
-			if server.Encryption != "" {
-				method = server.Encryption
-			} else {
-				method = ssdData.Encryption
-			}
-			var password string
-			if server.Password != "" {
-				password = server.Password
-			} else {
-				password = ssdData.Password
-			}
-			newSubscription.Profiles = append(newSubscription.Profiles, Profile{
-				Name:       server.Remarks,
-				Server:     server.Server,
-				ServerPort: server.Port,
-				Method:     method,
-				Password:   password,
-			})
-		}
-		// TODO: Should I update data and UI on dedicated thread?
-		if err = UpdateSubscription(newSubscription); err != nil {
-			log.Println(err)
-			return
-		}
-		log.Println("Successfully saved")
 		updateTabs()
 	}()
 }
@@ -269,7 +162,6 @@ func onRemoveSubscriptionAction() {
 }
 
 func onRunAction() {
-	// TODO
 	si := config.CurrentProfileSubscription
 	if si < 0 || si >= len(config.Subscriptions) {
 		log.Printf("Invalid index %d\n", si)
