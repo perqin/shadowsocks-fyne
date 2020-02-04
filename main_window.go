@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
+	"github.com/perqin/shadowsocks-fyne/resources"
 	customWidget "github.com/perqin/shadowsocks-fyne/widget"
 	"log"
 	"strconv"
@@ -298,15 +299,15 @@ func onSettingsAction() {
 
 func buildToolbar() fyne.CanvasObject {
 	return widget.NewToolbar(
-		widget.NewToolbarAction(addIcon, onAddSubscriptionAction),
-		widget.NewToolbarAction(refreshIcon, onRefreshAction),
-		widget.NewToolbarAction(editSubscriptionIcon, onEditSubscriptionAction),
-		widget.NewToolbarAction(deleteIcon, onRemoveSubscriptionAction),
+		widget.NewToolbarAction(resources.AddPng, onAddSubscriptionAction),
+		widget.NewToolbarAction(resources.RefreshPng, onRefreshAction),
+		widget.NewToolbarAction(resources.EditsubscriptionPng, onEditSubscriptionAction),
+		widget.NewToolbarAction(resources.DeletePng, onRemoveSubscriptionAction),
 		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(playIcon, onRunAction),
-		widget.NewToolbarAction(stopIcon, onStopAction),
-		widget.NewToolbarAction(addProfileIcon, onAddProfileAction),
-		widget.NewToolbarAction(editProfileIcon, onEditProfileAction),
+		widget.NewToolbarAction(resources.PlayPng, onRunAction),
+		widget.NewToolbarAction(resources.StopPng, onStopAction),
+		widget.NewToolbarAction(resources.AddprofilePng, onAddProfileAction),
+		widget.NewToolbarAction(resources.EditprofilePng, onEditProfileAction),
 		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(settingsIcon, onSettingsAction))
+		widget.NewToolbarAction(resources.SettingsPng, onSettingsAction))
 }

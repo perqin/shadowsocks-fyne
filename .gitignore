@@ -17,3 +17,6 @@
 
 # IDEs
 /.idea
+
+# Ignore all generated sources
+*_gen.go

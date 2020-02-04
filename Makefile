@@ -14,6 +14,6 @@ linux:
 	$(GOBUILD) -o $(BINARY_NAME)-$@ -v
 
 win64:
-	$(GOGET) github.com/akavel/rsrc
-	rsrc -manifest ./assets/app.manifest -o rsrc.syso -arch amd64
-	$(GOBUILD) -o $(BINARY_NAME)-$@.exe -ldflags -H=windowsgui -v
+	$(GOGET) fyne.io/fyne/cmd/fyne
+	fyne bundle -package resources -prefix= ./resources > ./resources/resources_gen.go
+	fyne package -os windows -name shadowsocks-fyne
