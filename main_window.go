@@ -6,13 +6,27 @@ import (
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
+	"github.com/perqin/shadowsocks-fyne/material"
 	"github.com/perqin/shadowsocks-fyne/resources"
 	customWidget "github.com/perqin/shadowsocks-fyne/widget"
 	"log"
 	"strconv"
 )
 
+const toolbarHeight = 56
+
 var mainWindow fyne.Window
+var drawer *subscriptionDrawer
+var titleLabel *widget.Label
+var updateSubscriptionButton *material.ToolbarActionButton
+var editSubscriptionButton *material.ToolbarActionButton
+var removeSubscriptionButton *material.ToolbarActionButton
+var runButton *material.ToolbarActionButton
+var stopButton *material.ToolbarActionButton
+var addProfileButton *material.ToolbarActionButton
+var editProfileButton *material.ToolbarActionButton
+var settingsButton *material.ToolbarActionButton
+var profileList *widget.Box
 
 func showMainWindow() {
 	if mainWindow != nil {
@@ -23,24 +37,58 @@ func showMainWindow() {
 	mainWindow.SetOnClosed(func() {
 		mainWindow = nil
 	})
-	mainWindow.Resize(fyne.Size{
-		Width:  1200,
-		Height: 800,
-	})
 	mainWindow.CenterOnScreen()
-	subscriptionsTabs = widget.NewTabContainer(buildTabs()...)
-	subscriptionsTabs.SetTabLocation(widget.TabLocationLeading)
-	mainWindow.SetContent(fyne.NewContainerWithLayout(customWidget.NewVWeightLayout(),
-		buildToolbar(),
-		customWidget.NewWeightedItem(subscriptionsTabs, 1)))
+	drawer = newSubscriptionDrawer(config.Subscriptions)
+	titleLabel = widget.NewLabel("Title")
+	updateSubscriptionButton = material.NewToolbarActionButton(resources.RefreshPng, onRefreshAction)
+	editSubscriptionButton = material.NewToolbarActionButton(resources.EditsubscriptionPng, onEditSubscriptionAction)
+	removeSubscriptionButton = material.NewToolbarActionButton(resources.DeletePng, onEditSubscriptionAction)
+	runButton = material.NewToolbarActionButton(resources.PlayPng, onRunAction)
+	stopButton = material.NewToolbarActionButton(resources.StopPng, onStopAction)
+	addProfileButton = material.NewToolbarActionButton(resources.AddprofilePng, onAddProfileAction)
+	editProfileButton = material.NewToolbarActionButton(resources.EditprofilePng, onEditProfileAction)
+	settingsButton = material.NewToolbarActionButton(resources.SettingsPng, onSettingsAction)
+	profileList = widget.NewVBox()
+	selectSubscription(config.CurrentProfileSubscription)
+	mainWindow.SetContent(fyne.NewContainerWithLayout(&mainWindowLayout{},
+		drawer,
+		material.NewToolbar(titleLabel, updateSubscriptionButton, editSubscriptionButton, removeSubscriptionButton,
+			runButton, stopButton, addProfileButton, editProfileButton, settingsButton),
+		widget.NewScrollContainer(profileList)))
 	mainWindow.Show()
+}
+
+func refreshAll(resetSelection bool) {
+	subscriptions := config.Subscriptions
+	titles := make([]string, len(subscriptions)-1)
+	for i, s := range subscriptions[1:] {
+		titles[i] = s.Name
+	}
+	drawer.SubscriptionTitles = titles
+	drawer.Refresh()
+	if drawer.SelectedIndex < 0 || drawer.SelectedIndex >= len(config.Subscriptions) {
+		resetSelection = true
+	}
+	if resetSelection {
+		selectSubscription(0)
+	} else {
+		selectSubscription(drawer.SelectedIndex)
+	}
+}
+
+func selectSubscription(index int) {
+	drawer.SelectedIndex = index
+	drawer.Refresh()
+	titleLabel.SetText(config.Subscriptions[index].Name)
+	profileList.Children = buildServerList(index, config.Subscriptions[index])
+	profileList.Refresh()
 }
 
 // UI widgets that should be updated on data changed
 var subscriptionsTabs *widget.TabContainer
 var currentProfileWidget *ProfileWidget
 
-func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
+func buildServerList(index int, subscription Subscription) []fyne.CanvasObject {
 	list := make([]fyne.CanvasObject, 0)
 	for indexP, profile := range subscription.Profiles {
 		indexP := indexP
@@ -56,40 +104,12 @@ func buildServerList(index int, subscription Subscription) fyne.CanvasObject {
 		profileWidget.Profile = profile
 		if index == config.CurrentProfileSubscription && indexP == config.CurrentProfile {
 			profileWidget.Selected = true
+			currentProfileWidget = profileWidget
 		}
 		profileWidget.Refresh()
 		list = append(list, profileWidget)
 	}
-	return widget.NewScrollContainer(widget.NewVBox(list...))
-}
-
-func buildTabs() []*widget.TabItem {
-	var item []*widget.TabItem
-	for indexS, subscription := range config.Subscriptions {
-		item = append(item, widget.NewTabItem(subscription.Name, buildServerList(indexS, subscription)))
-	}
-	return item
-}
-
-func updateTabs() {
-	// Ensure refresh not crash
-	subscriptionsTabs.SelectTabIndex(0)
-	// Ensure same item count
-	for len(subscriptionsTabs.Items) != len(config.Subscriptions) {
-		if len(subscriptionsTabs.Items) < len(config.Subscriptions) {
-			subscriptionsTabs.Append(widget.NewTabItem("", widget.NewHBox()))
-		} else {
-			subscriptionsTabs.RemoveIndex(0)
-		}
-	}
-	// Ensure correct UI
-	for i, s := range config.Subscriptions {
-		tab := subscriptionsTabs.Items[i]
-		tab.Text = s.Name
-		tab.Content = buildServerList(i, s)
-	}
-	// And refresh!
-	subscriptionsTabs.Refresh()
+	return list
 }
 
 func showEditSubscriptionDialog(index int) {
@@ -123,31 +143,28 @@ func showEditSubscriptionDialog(index int) {
 				subscription.Name = nameEntry.Text
 				subscription.Url = urlEntry.Text
 				SaveSubscription(index, subscription)
+				refreshAll(false)
 			} else {
 				// Add new one
 				AddSubscription(Subscription{
-					Name: "(Untitled)",
+					Name: nameEntry.Text,
 					Url:  urlEntry.Text,
 				})
+				refreshAll(true)
 			}
-			updateTabs()
 		}
 	}, mainWindow)
 
 }
 
-func onAddSubscriptionAction() {
-	showEditSubscriptionDialog(-1)
-}
-
 func onRefreshAction() {
 	go func() {
-		err := UpdateSubscription(subscriptionsTabs.CurrentTabIndex())
+		err := UpdateSubscription(drawer.SelectedIndex)
 		if err != nil {
 			customWidget.Toast(err.Error())
 			return
 		}
-		updateTabs()
+		refreshAll(false)
 	}()
 }
 
@@ -156,14 +173,13 @@ func onEditSubscriptionAction() {
 }
 
 func onRemoveSubscriptionAction() {
-	subscriptionIndex := subscriptionsTabs.CurrentTabIndex()
+	subscriptionIndex := drawer.SelectedIndex
 	err := removeSubscription(subscriptionIndex)
-	if err == nil {
-		subscriptionsTabs.SelectTabIndex(0)
-		updateTabs()
-	} else {
+	if err != nil {
 		log.Println(err)
+		return
 	}
+	refreshAll(false)
 }
 
 func onRunAction() {
@@ -256,8 +272,7 @@ func showEditProfileDialog(edit bool) {
 			if err != nil {
 				log.Println(err)
 			} else {
-				// TODO: Performance issue
-				updateTabs()
+				refreshAll(false)
 			}
 		}
 	}, mainWindow)
@@ -297,17 +312,26 @@ func onSettingsAction() {
 	}, mainWindow)
 }
 
-func buildToolbar() fyne.CanvasObject {
-	return widget.NewToolbar(
-		widget.NewToolbarAction(resources.AddPng, onAddSubscriptionAction),
-		widget.NewToolbarAction(resources.RefreshPng, onRefreshAction),
-		widget.NewToolbarAction(resources.EditsubscriptionPng, onEditSubscriptionAction),
-		widget.NewToolbarAction(resources.DeletePng, onRemoveSubscriptionAction),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(resources.PlayPng, onRunAction),
-		widget.NewToolbarAction(resources.StopPng, onStopAction),
-		widget.NewToolbarAction(resources.AddprofilePng, onAddProfileAction),
-		widget.NewToolbarAction(resources.EditprofilePng, onEditProfileAction),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(resources.SettingsPng, onSettingsAction))
+type mainWindowLayout struct {
+}
+
+func (l *mainWindowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	drawerWidth := objects[0].MinSize().Width
+	// Drawer
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[0].Resize(fyne.NewSize(drawerWidth, size.Height))
+	// Toolbar background
+	objects[1].Move(fyne.NewPos(drawerWidth, 0))
+	objects[1].Resize(fyne.NewSize(size.Width-drawerWidth, toolbarHeight))
+	// Content
+	objects[2].Move(fyne.NewPos(drawerWidth, toolbarHeight))
+	objects[2].Resize(fyne.NewSize(size.Width-drawerWidth, size.Height-toolbarHeight))
+}
+
+func (l *mainWindowLayout) MinSize(objects []fyne.CanvasObject) (size fyne.Size) {
+	drawerMinSize := objects[0].MinSize()
+	toolbarMinWidth := objects[1].MinSize().Width
+	size.Width = drawerMinSize.Width + fyne.Max(toolbarMinWidth, 640)
+	size.Height = fyne.Max(drawerMinSize.Height, toolbarHeight)
+	return
 }
