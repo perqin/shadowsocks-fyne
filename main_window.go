@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"fyne.io/fyne"
+	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
+	"fyne.io/fyne/layout"
 	"fyne.io/fyne/widget"
 	"github.com/perqin/go-shadowsocks2"
 	"github.com/perqin/shadowsocks-fyne/material"
@@ -42,7 +44,7 @@ func showMainWindow() {
 	titleLabel = widget.NewLabel("Title")
 	updateSubscriptionButton = material.NewToolbarActionButton(resources.RefreshPng, onRefreshAction)
 	editSubscriptionButton = material.NewToolbarActionButton(resources.EditsubscriptionPng, onEditSubscriptionAction)
-	removeSubscriptionButton = material.NewToolbarActionButton(resources.DeletePng, onEditSubscriptionAction)
+	removeSubscriptionButton = material.NewToolbarActionButton(resources.DeletePng, onRemoveSubscriptionAction)
 	runButton = material.NewToolbarActionButton(resources.PlayPng, onRunAction)
 	stopButton = material.NewToolbarActionButton(resources.StopPng, onStopAction)
 	addProfileButton = material.NewToolbarActionButton(resources.AddprofilePng, onAddProfileAction)
@@ -50,11 +52,13 @@ func showMainWindow() {
 	settingsButton = material.NewToolbarActionButton(resources.SettingsPng, onSettingsAction)
 	profileList = widget.NewVBox()
 	selectSubscription(config.CurrentProfileSubscription)
-	mainWindow.SetContent(fyne.NewContainerWithLayout(&mainWindowLayout{},
-		drawer,
-		material.NewToolbar(titleLabel, updateSubscriptionButton, editSubscriptionButton, removeSubscriptionButton,
-			runButton, stopButton, addProfileButton, editProfileButton, settingsButton),
-		widget.NewScrollContainer(profileList)))
+	mainWindow.SetContent(fyne.NewContainerWithLayout(layout.NewMaxLayout(),
+		canvas.NewRectangle(application.Settings().Theme().(*material.Theme).WindowBackground),
+		fyne.NewContainerWithLayout(&mainWindowLayout{},
+			drawer,
+			material.NewToolbar(titleLabel, updateSubscriptionButton, editSubscriptionButton, removeSubscriptionButton,
+				runButton, stopButton, addProfileButton, editProfileButton, settingsButton),
+			widget.NewScrollContainer(profileList))))
 	mainWindow.Show()
 }
 

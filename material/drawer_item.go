@@ -87,9 +87,9 @@ func (r *drawerItemRenderer) Refresh() {
 	var backgroundColor color.Color
 	switch {
 	case r.item.Selected:
-		backgroundColor = primaryColorOf(0.12)
+		backgroundColor = withAlpha(theme.PrimaryColor(), 0.12)
 	case r.item.hovered:
-		backgroundColor = hoverColor()
+		backgroundColor = theme.HoverColor()
 	default:
 		backgroundColor = color.Transparent
 	}

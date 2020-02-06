@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne"
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/driver/desktop"
+	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 	"image/color"
 )
@@ -48,7 +49,7 @@ func (b *ToolbarActionButton) MouseMoved(*desktop.MouseEvent) {
 
 func (b *ToolbarActionButton) CreateRenderer() fyne.WidgetRenderer {
 	b.ExtendBaseWidget(b)
-	bg := canvas.NewCircle(hoverColor())
+	bg := canvas.NewCircle(theme.HoverColor())
 	bg.Hide()
 	i := canvas.NewImageFromResource(b.icon)
 	return &toolbarActionButtonRenderer{button: b, background: bg, icon: i, objects: []fyne.CanvasObject{bg, i}}

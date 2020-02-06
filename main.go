@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"github.com/perqin/go-shadowsocks2"
+	"github.com/perqin/shadowsocks-fyne/material"
 	"log"
 	"os"
 	"os/signal"
@@ -52,6 +53,7 @@ var applicationId = "shadowsocks-fyne"
 func startupFyneGui() {
 	// Setup GUI
 	application = app.NewWithID(applicationId)
+	application.Settings().SetTheme(material.NewLightTheme())
 	// A invisible window is required, otherwise the Fyne will exit after all windows are closed
 	application.NewWindow("")
 	// Show main window if needed
