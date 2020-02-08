@@ -16,4 +16,4 @@ linux:
 win64:
 	$(GOGET) fyne.io/fyne/cmd/fyne
 	fyne bundle -package resources -prefix= ./resources > ./resources/resources_gen.go
-	fyne package -os windows -name shadowsocks-fyne
+	fyne package -os windows -name shadowsocks-fyne -icon ./resources/icon.png

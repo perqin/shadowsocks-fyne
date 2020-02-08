@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/getlantern/systray"
-	"github.com/getlantern/systray/example/icon"
+	"github.com/perqin/shadowsocks-fyne/resources"
 )
 
 func setupSystemTray() {
@@ -18,8 +18,7 @@ func setupSystemTray() {
 
 func configureSystemTray() {
 	systray.SetTitle(appName)
-	// TODO: Icon for app
-	systray.SetIcon(icon.Data)
+	systray.SetIcon(resources.AppIco.StaticContent)
 	showMenu := systray.AddMenuItem("Show", "Show main window")
 	exitMenu := systray.AddMenuItem("Exit", "Exit application")
 	// Menu handlers
